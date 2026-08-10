@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { COCKTAILS } from './cocktails.js';
 import { createScene } from './scene.js';
 import { buildGlass, buildVessel, buildStream, glassInfo, makeLiquidLayer } from './vessels.js';
+import { FrameSequence, drawCover } from './frames.js';
 
 // ---------------------------------------------------------------------------
 // Вся анимация — чистая функция от прогресса скролла p ∈ [0..1].
@@ -47,6 +48,8 @@ const ui = {
   pourName: document.getElementById('pourName'),
   pourMl: document.getElementById('pourMl'),
   scrollHint: document.getElementById('scrollHint'),
+  frameLoad: document.getElementById('frameLoad'),
+  frameLoadPct: document.getElementById('frameLoadPct'),
   finale: document.getElementById('finale'),
   finaleName: document.getElementById('finaleName'),
   finaleRecipe: document.getElementById('finaleRecipe'),
@@ -80,6 +83,8 @@ function clearActive() {
     scene.remove(o);
     disposeObject(o);
   });
+  document.body.classList.remove('frames-mode');
+  ui.frameLoad.hidden = true;
   active = null;
 }
 
@@ -165,6 +170,42 @@ function startCocktail(cocktail) {
 
   ui.menu.classList.add('hidden');
   ui.hud.hidden = false;
+
+  // Пре-рендеренные кадры (Blender): если есть — включаем режим «видео»
+  if (cocktail.frames) {
+    const seq = new FrameSequence(cocktail.frames);
+    const me = active;
+    seq.probe().then((ok) => {
+      if (!ok || active !== me) return; // кадров нет или коктейль сменили
+      active.mode = 'frames';
+      active.seq = seq;
+      document.body.classList.add('frames-mode');
+      ui.frameLoad.hidden = false;
+      seq.onProgress = (k) => {
+        ui.frameLoadPct.textContent = Math.round(k * 100);
+        if (k >= 1) ui.frameLoad.hidden = true;
+      };
+      seq.preloadAll();
+    });
+  }
+}
+
+// ---------- Канвас для кадров ----------
+
+const frameCanvas = document.getElementById('frameCanvas');
+const frameCtx = frameCanvas.getContext('2d');
+
+function sizeFrameCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  frameCanvas.width = Math.round(window.innerWidth * dpr);
+  frameCanvas.height = Math.round(window.innerHeight * dpr);
+}
+sizeFrameCanvas();
+window.addEventListener('resize', sizeFrameCanvas);
+
+function drawFramesMode(p) {
+  const img = active.seq.nearest(p);
+  if (img) drawCover(frameCtx, img, frameCanvas.width, frameCanvas.height);
 }
 
 function backToMenu() {
@@ -326,7 +367,14 @@ function updateVessels(p) {
     stream.visible = false;
   }
 
-  // ---------- HUD ----------
+}
+
+function updateHUD(p) {
+  const { cocktail } = active;
+  const n = cocktail.ingredients.length;
+  const usable = 1 - INTRO - OUTRO;
+  const pp = (p - INTRO) / usable;
+
   let labelOpacity = 0;
   const segIdx = Math.max(0, Math.min(n - 1, Math.floor(pp * n)));
   const segLocal = clamp01(pp * n - segIdx);
@@ -394,14 +442,19 @@ function frame(now) {
   curP += (targetP - curP) * Math.min(1, dt * 7);
   if (Math.abs(targetP - curP) < 0.0004) curP = targetP;
 
-  if (active) {
+  if (active && active.mode === 'frames') {
+    drawFramesMode(curP);
+    updateHUD(curP);
+  } else if (active) {
     updateVessels(curP);
+    updateHUD(curP);
     updateCamera(curP);
+    renderer.render(scene, camera);
   } else {
     updateCamera(0);
+    renderer.render(scene, camera);
   }
 
-  renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 

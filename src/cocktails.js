@@ -9,6 +9,9 @@ export const COCKTAILS = [
     tagline: 'Водка · апельсиновый сок',
     glass: 'highball',
     swatch: 'linear-gradient(160deg, #ffc25e, #f08c1b)',
+    // Пре-рендеренные кадры (Blender, см. blender/render_screwdriver.py).
+    // Если кадров нет — автоматический откат на 3D-режим.
+    frames: { base: '/frames/screwdriver/', count: 240 },
     ingredients: [
       {
         name: 'Водка',

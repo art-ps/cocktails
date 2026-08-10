@@ -37,6 +37,31 @@ body {
 #app { position: fixed; inset: 0; z-index: 1; }
 #app canvas { display: block; }
 
+#frameCanvas {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  width: 100vw;
+  height: 100vh;
+  display: none;
+}
+
+body.frames-mode #app { visibility: hidden; }
+body.frames-mode #frameCanvas { display: block; }
+
+#frameLoad {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  background: rgba(20, 14, 9, 0.55);
+  border: 1px solid rgba(242, 234, 217, 0.15);
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
 #spacer { position: relative; width: 1px; }
 
 /* ---------- Меню ---------- */
