@@ -8,22 +8,22 @@ const GLASS_PARAMS = {
   rocks:    { height: 1.55, outerR: 0.78, wall: 0.07, floor: 0.34, innerR: 0.70, maxFill: 0.98 },
 };
 
-// «Фейковое» стекло: прозрачность + сильные отражения окружения.
-// Настоящий transmission в three.js не показывает прозрачные объекты
-// (жидкость) сквозь себя, поэтому берём классический приём.
+// Честное стекло: transmission + ior. Ограничение three.js — transmission
+// не показывает transparent-объекты сквозь себя, поэтому вся жидкость
+// в сцене непрозрачная (см. makeLiquidLayer) и видна через стекло с преломлением.
 function glassMaterial(tint = 0xffffff, opts = {}) {
   return new THREE.MeshPhysicalMaterial({
     color: tint,
     metalness: 0,
-    roughness: 0.05,
+    roughness: 0.04,
+    transmission: 1,
+    thickness: opts.thickness ?? 0.12,
+    ior: 1.5,
     clearcoat: 1,
     clearcoatRoughness: 0.05,
     specularIntensity: 1,
-    envMapIntensity: 1.7,
+    envMapIntensity: 1.2,
     side: THREE.DoubleSide,
-    transparent: true,
-    opacity: opts.opacity ?? 0.22,
-    depthWrite: false,
   });
 }
 
@@ -46,8 +46,7 @@ export function buildGlass(type) {
   pts.push(new THREE.Vector2(0, p.floor));
 
   const geo = new THREE.LatheGeometry(pts, 72);
-  const mesh = new THREE.Mesh(geo, glassMaterial(0xf8fbff, { opacity: 0.045 }));
-  mesh.material.envMapIntensity = 0.9;
+  const mesh = new THREE.Mesh(geo, glassMaterial(0xf8fbff, { thickness: 0.08 }));
   mesh.renderOrder = 20;
   mesh.castShadow = false;
   mesh.receiveShadow = false;
@@ -62,6 +61,7 @@ export function buildGlass(type) {
 // Слой жидкости одного ингредиента: единичный цилиндр с основанием
 // в y=0, масштабируется по высоте. Каждый ингредиент — свой слой,
 // чтобы пропорции коктейля были видны визуально.
+// Непрозрачный — иначе не виден сквозь transmission-стекло (см. glassMaterial).
 export function makeLiquidLayer(type, isBottom) {
   const p = GLASS_PARAMS[type];
   const rTop = p.innerR - 0.015;
@@ -71,16 +71,31 @@ export function makeLiquidLayer(type, isBottom) {
   const mat = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     metalness: 0,
-    roughness: 0.85,
-    clearcoat: 0.15,
-    clearcoatRoughness: 0.3,
-    transparent: true,
-    opacity: 0.8,
-    envMapIntensity: 0,
-    depthWrite: false,
+    roughness: 0.3,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.2,
+    envMapIntensity: 0.35,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.scale.y = 0.0001;
+  mesh.visible = false;
+  return mesh;
+}
+
+// Глянцевый диск поверхности напитка — ловит блик HDRI, читается как «мокрое»
+export function makeSurfaceDisc(type) {
+  const p = GLASS_PARAMS[type];
+  const geo = new THREE.CircleGeometry(p.innerR - 0.012, 48);
+  geo.rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff,
+    metalness: 0,
+    roughness: 0.06,
+    clearcoat: 1,
+    clearcoatRoughness: 0.04,
+    envMapIntensity: 1.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
   mesh.visible = false;
   return mesh;
 }
@@ -162,7 +177,7 @@ function buildSpiritBottle(v) {
     new THREE.Vector2(0.1, 2.97),
     new THREE.Vector2(0.1, 2.9),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { opacity: v.glassOpacity ?? 0.5 }));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.2 }));
   body.renderOrder = 10;
   group.add(body);
   addLabel(group, 0.425, 1.0, 0.85, v);
@@ -189,7 +204,7 @@ function buildSodaBottle(v) {
     new THREE.Vector2(0.09, 2.77),
     new THREE.Vector2(0.09, 2.7),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { opacity: v.glassOpacity ?? 0.5 }));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.2 }));
   body.renderOrder = 10;
   group.add(body);
   addLabel(group, 0.395, 1.28, 0.62, v);
@@ -214,7 +229,7 @@ function buildCarafe(v) {
     new THREE.Vector2(0.26, 2.25),
     new THREE.Vector2(0.19, 2.08),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(0xf4f6f2, { opacity: 0.18 }));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(0xf4f6f2, { thickness: 0.15 }));
   body.renderOrder = 10;
   group.add(body);
 
@@ -236,9 +251,6 @@ function buildCarafe(v) {
         roughness: 0.45,
         clearcoat: 0.2,
         envMapIntensity: 0.3,
-        transparent: true,
-        opacity: 0.97,
-        depthWrite: false,
       })
     );
     liq.renderOrder = 2;

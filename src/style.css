@@ -35,6 +35,13 @@ body {
 }
 
 #app { position: fixed; inset: 0; z-index: 1; }
+#app::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(90% 70% at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%);
+}
 #app canvas { display: block; }
 
 #frameCanvas {

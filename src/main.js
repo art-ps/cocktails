@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { COCKTAILS } from './cocktails.js';
 import { createScene } from './scene.js';
-import { buildGlass, buildVessel, buildStream, glassInfo, makeLiquidLayer } from './vessels.js';
+import { buildGlass, buildVessel, buildStream, glassInfo, makeLiquidLayer, makeSurfaceDisc } from './vessels.js';
 import { FrameSequence, drawCover } from './frames.js';
 
 // ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ const lerp = (a, b, k) => a + (b - a) * k;
 // ---------------------------------------------------------------------------
 
 const app = document.getElementById('app');
-const { renderer, scene, camera, makeContactShadow } = createScene(app);
+const { scene, camera, makeContactShadow, makeCaustic, composer } = createScene(app);
 
 const ui = {
   menu: document.getElementById('menu'),
@@ -79,7 +79,7 @@ function disposeObject(root) {
 
 function clearActive() {
   if (!active) return;
-  [active.glass, active.stream, ...active.vessels, ...active.shadows].forEach((o) => {
+  [active.glass, active.stream, active.caustic, ...active.vessels, ...active.shadows].forEach((o) => {
     scene.remove(o);
     disposeObject(o);
   });
@@ -101,14 +101,21 @@ function startCocktail(cocktail) {
     const c = new THREE.Color(ing.color);
     const hsl = { h: 0, s: 0, l: 0 };
     c.getHSL(hsl);
-    // затемняем базу: яркий свет + ACES-тонмаппинг иначе выбеливают цвет
-    c.setHSL(hsl.h, Math.min(1, hsl.s * 1.35), hsl.l * (0.3 + 0.35 * (1 - ing.opacity)));
+    // слой непрозрачный; прозрачные ингредиенты (водка, тоник) — светлые
+    // и глянцевые, плотные (сок, кола) — темнее и матовее
+    c.setHSL(hsl.h, Math.min(1, hsl.s * 1.25), hsl.l * (0.45 + 0.45 * (1 - ing.opacity)));
     layer.material.color.copy(c);
-    layer.material.emissive.copy(c).multiplyScalar(0.25);
-    layer.material.opacity = clamp01(0.25 + ing.opacity * 0.72);
+    layer.material.roughness = 0.05 + 0.35 * ing.opacity;
+    layer.material.envMapIntensity = 0.3 + 0.5 * (1 - ing.opacity);
     glass.add(layer);
     return layer;
   });
+
+  const surface = makeSurfaceDisc(cocktail.glass);
+  glass.add(surface);
+
+  const caustic = makeCaustic(cocktail.glass === 'rocks' ? 1.1 : 0.9);
+  scene.add(caustic);
 
   const stream = buildStream();
   scene.add(stream);
@@ -140,6 +147,8 @@ function startCocktail(cocktail) {
     cocktail,
     glass,
     layers,
+    surface,
+    caustic,
     vessels,
     stream,
     shadows,
@@ -349,6 +358,20 @@ function updateVessels(p) {
     level += h;
   });
 
+  // Поверхность напитка + «каустика» на столе
+  const topLayer = [...layers].reverse().find((l) => l.visible);
+  const { surface, caustic } = active;
+  if (topLayer) {
+    surface.visible = true;
+    surface.position.y = gp.floor + 0.005 + level + 0.002;
+    surface.material.color.copy(topLayer.material.color).lerp(tmpColor.set(0xffffff), 0.35);
+    caustic.material.color.copy(topLayer.material.color).lerp(tmpColor.set(0xffffff), 0.3);
+    caustic.material.opacity = 0.5 * clamp01(level / gp.maxFill + 0.25);
+  } else {
+    surface.visible = false;
+    caustic.material.opacity = 0;
+  }
+
   // ---------- Струя ----------
   if (pouringIndex >= 0) {
     const v = vessels[pouringIndex];
@@ -449,10 +472,10 @@ function frame(now) {
     updateVessels(curP);
     updateHUD(curP);
     updateCamera(curP);
-    renderer.render(scene, camera);
+    composer.render();
   } else {
     updateCamera(0);
-    renderer.render(scene, camera);
+    composer.render();
   }
 
   requestAnimationFrame(frame);

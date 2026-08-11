@@ -1,53 +1,9 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-
-function makeWoodTexture() {
-  const c = document.createElement('canvas');
-  c.width = 1024;
-  c.height = 1024;
-  const ctx = c.getContext('2d');
-  const base = ctx.createLinearGradient(0, 0, 0, c.height);
-  base.addColorStop(0, '#5a3a20');
-  base.addColorStop(1, '#4a2e17');
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, c.width, c.height);
-
-  // Доски и волокна
-  let seed = 7;
-  const rand = () => {
-    seed = (seed * 16807) % 2147483647;
-    return seed / 2147483647;
-  };
-  const plankH = c.height / 6;
-  for (let p = 0; p < 6; p++) {
-    const y0 = p * plankH;
-    const tone = 0.85 + rand() * 0.3;
-    ctx.fillStyle = `rgba(${Math.round(90 * tone)}, ${Math.round(58 * tone)}, ${Math.round(30 * tone)}, 0.5)`;
-    ctx.fillRect(0, y0, c.width, plankH);
-    // волокна
-    for (let i = 0; i < 70; i++) {
-      const y = y0 + rand() * plankH;
-      const alpha = 0.04 + rand() * 0.08;
-      ctx.strokeStyle = rand() > 0.5 ? `rgba(30,16,6,${alpha})` : `rgba(200,150,90,${alpha * 0.7})`;
-      ctx.lineWidth = 0.6 + rand() * 1.8;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      for (let x = 0; x <= c.width; x += 64) {
-        ctx.lineTo(x, y + Math.sin(x * 0.01 + rand() * 6) * 3 + (rand() - 0.5) * 4);
-      }
-      ctx.stroke();
-    }
-    // щель между досками
-    ctx.fillStyle = 'rgba(15,8,3,0.55)';
-    ctx.fillRect(0, y0 + plankH - 2, c.width, 3);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2, 2);
-  tex.anisotropy = 8;
-  return tex;
-}
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 function makeContactShadowTexture() {
   const c = document.createElement('canvas');
@@ -63,30 +19,58 @@ function makeContactShadowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+// Пятно «каустики» — светлый градиент, аддитивно подсвечивает стол под стаканом
+function makeCausticTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(128, 128, 8, 128, 128, 120);
+  g.addColorStop(0, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
+
 export function createScene(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // 1.5 вместо 2: transmission + постобработка дороги на ретине
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // transmission-проход в полразрешения: преломление чуть мягче, но вдвое дешевле
+  renderer.transmissionResolutionScale = 0.5;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
 
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.06).texture;
+  // HDRI бара: окружение (отражения в стекле) + размытый фон вместо стены
+  new RGBELoader().load('hdri/bar.hdr', (tex) => {
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = tex;
+    scene.background = tex;
+    scene.backgroundBlurriness = 0.35;
+    scene.backgroundIntensity = 0.16;
+    scene.environmentIntensity = 0.65;
+    scene.backgroundRotation = new THREE.Euler(0, Math.PI * 1.15, 0);
+    scene.environmentRotation = new THREE.Euler(0, Math.PI * 1.15, 0);
+  });
 
   const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 3, 9.5);
   camera.lookAt(0, 1.35, 0);
 
   // Тёплый ключевой свет сверху-слева, как лампа над баром
-  const key = new THREE.DirectionalLight(0xffdcae, 2.6);
+  // (HDRI берёт на себя часть освещения, поэтому интенсивности умеренные)
+  const key = new THREE.DirectionalLight(0xffdcae, 1.8);
   key.position.set(-3.5, 7.5, 4.5);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.left = -6;
   key.shadow.camera.right = 6;
   key.shadow.camera.top = 6;
@@ -96,29 +80,36 @@ export function createScene(container) {
   key.shadow.radius = 6;
   scene.add(key);
 
-  const rim = new THREE.DirectionalLight(0x9fb6ff, 0.7);
+  const rim = new THREE.DirectionalLight(0x9fb6ff, 0.4);
   rim.position.set(4, 4, -5);
   scene.add(rim);
 
-  const fill = new THREE.AmbientLight(0x8a6a4a, 0.55);
+  const fill = new THREE.AmbientLight(0x8a6a4a, 0.25);
   scene.add(fill);
 
-  // Стол
+  // Стол — PBR-орех (ambientCG Wood066)
+  const texLoader = new THREE.TextureLoader();
+  const woodColor = texLoader.load('textures/wood_color.jpg');
+  woodColor.colorSpace = THREE.SRGBColorSpace;
+  const woodNormal = texLoader.load('textures/wood_normal.jpg');
+  const woodRough = texLoader.load('textures/wood_rough.jpg');
+  [woodColor, woodNormal, woodRough].forEach((t) => {
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(3, 1.5);
+    t.anisotropy = 8;
+  });
   const table = new THREE.Mesh(
     new THREE.BoxGeometry(26, 0.5, 12),
-    new THREE.MeshStandardMaterial({ map: makeWoodTexture(), roughness: 0.55, metalness: 0.05 })
+    new THREE.MeshStandardMaterial({
+      map: woodColor,
+      normalMap: woodNormal,
+      roughnessMap: woodRough,
+      metalness: 0.05,
+    })
   );
   table.position.y = -0.25;
   table.receiveShadow = true;
   scene.add(table);
-
-  // Задник — размытая стена бара
-  const wall = new THREE.Mesh(
-    new THREE.PlaneGeometry(50, 24),
-    new THREE.MeshStandardMaterial({ color: 0x2e1d12, roughness: 1 })
-  );
-  wall.position.set(0, 8, -7.5);
-  scene.add(wall);
 
   const shadowTex = makeContactShadowTexture();
   function makeContactShadow(scale = 1) {
@@ -132,12 +123,51 @@ export function createScene(container) {
     return m;
   }
 
+  const causticTex = makeCausticTexture();
+  function makeCaustic(scale = 1) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6 * scale, 2.6 * scale),
+      new THREE.MeshBasicMaterial({
+        map: causticTex,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        opacity: 0,
+      })
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.006;
+    m.renderOrder = 2;
+    return m;
+  }
+
+  // Постобработка: мягкий bloom на бликах. Глубину кадра даёт размытый
+  // HDRI-фон + CSS-виньетка — BokehPass не окупал свои ~4 fps.
+  const composer = new EffectComposer(
+    renderer,
+    new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+      samples: 4,
+      type: THREE.HalfFloatType,
+    })
+  );
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.18, 0.4, 0.92
+  );
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
+  // отладочный хук (безвреден в проде)
+  window.__post = { bloom, renderer };
+
   function resize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
   }
   window.addEventListener('resize', resize);
 
-  return { renderer, scene, camera, makeContactShadow };
+  return { renderer, scene, camera, makeContactShadow, makeCaustic, composer };
 }
