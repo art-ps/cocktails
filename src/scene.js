@@ -183,16 +183,23 @@ export function createScene(container) {
     if (style === 'toon') {
       toonBackdrop = toonBackdrop || makeToonBackdrop();
       toonTableMat = toonTableMat || new THREE.MeshToonMaterial({
-        color: 0x9a6238,
+        color: 0xc98f55, // медовое дерево
         gradientMap: toonGradient(),
       });
       scene.background = toonBackdrop;
       table.material = toonTableMat;
       bloom.enabled = false;
+      // мягкий дневной свет
+      key.intensity = 1.0;
+      fill.intensity = 0.6;
+      rim.intensity = 0.15;
     } else {
       scene.background = backdropTex;
       table.material = woodMaterial;
       bloom.enabled = true;
+      key.intensity = 1.3;
+      fill.intensity = 0.25;
+      rim.intensity = 0.4;
     }
   }
 

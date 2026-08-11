@@ -107,7 +107,11 @@ function startCocktail(cocktail) {
     const c = new THREE.Color(ing.color);
     const hsl = { h: 0, s: 0, l: 0 };
     c.getHSL(hsl);
-    if (ing.opacity < 0.35) {
+    if (ing.opacity < 0.35 && visualStyle === 'toon') {
+      // мультик: прозрачная жидкость — пастельно-голубая «вода», как рисуют воду
+      c.setHSL(0.55, 0.38, 0.72);
+      layer.material.roughness = 0.2;
+    } else if (ing.opacity < 0.35) {
       // прозрачная жидкость (водка, джин, тоник): сквозь неё виден тёмный бар,
       // поэтому слой тёмный холодный со стеклянным бликом — не светлый («молоко»)
       c.setHSL(hsl.h, hsl.s * 0.5, 0.14 + 0.12 * ing.opacity);
@@ -158,6 +162,7 @@ function startCocktail(cocktail) {
 
   if (visualStyle === 'toon') {
     [glass, stream, ...vessels].forEach(applyToonStyle);
+    caustic.visible = false; // аддитивное пятно в рисованном стиле читается как дым
   }
 
   active = {
