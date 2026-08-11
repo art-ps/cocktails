@@ -22,7 +22,8 @@ ap.add_argument('--out', type=str, default='public/frames/screwdriver/')
 ap.add_argument('--still', type=float, default=None, help='отрендерить один кадр при прогрессе p (0..1)')
 ap.add_argument('--f0', type=int, default=1, help='первый кадр диапазона (рендер чанками)')
 ap.add_argument('--f1', type=int, default=None, help='последний кадр диапазона')
-ap.add_argument('--envrot', type=float, default=1.0, help='поворот HDRI, доли pi')
+ap.add_argument('--envrot', type=float, default=0.75, help='поворот HDRI, доли pi')
+ap.add_argument('--backdrop', action='store_true', help='кадр бара без посуды -> задник для realtime-режима')
 args = ap.parse_args(argv)
 
 # ---------------- тайминг (копия src/main.js) ----------------
@@ -210,7 +211,7 @@ scene.world = world
 world.use_nodes = True
 wt = world.node_tree
 bg = wt.nodes['Background']
-bg.inputs['Strength'].default_value = 1.0
+bg.inputs['Strength'].default_value = 0.35
 if os.path.exists(HDRI):
     env = wt.nodes.new('ShaderNodeTexEnvironment')
     env.image = bpy.data.images.load(HDRI)
@@ -241,10 +242,113 @@ area_light('rim', (3.5, 4.0, 4.0), (math.radians(-60), math.radians(30), 0), 4.0
 area_light('fill', (0, -6.0, 2.0), (math.radians(80), 0, 0), 8.0, 120, (1.0, 0.9, 0.8))
 
 # стол и задник
-table = cylinder('table', 14, 14, 0.5)
-table.location.z = -0.5
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=1)
+for v in bm.verts:
+    v.co.x *= 30
+    v.co.y *= 7
+    v.co.z *= 0.5
+mesh = bpy.data.meshes.new('table')
+bm.to_mesh(mesh)
+bm.free()
+table = new_obj('table', mesh)
+table.location = (0, 0, -0.25)
 table.data.materials.append(wood_mat())
 
+# ---------------- задний бар (backbar) ----------------
+# Как в референсах: тёмная стена, подсвеченные полки с бутылками,
+# тёплые лампы. DOF камеры уводит всё это в боке.
+import random
+random.seed(7)
+
+BAR_Y = 6.5  # стена бара
+
+def emission_mat(name, color, strength):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nodes = m.node_tree.nodes
+    nodes.clear()
+    em = nodes.new('ShaderNodeEmission')
+    em.inputs['Color'].default_value = color
+    em.inputs['Strength'].default_value = strength
+    out = nodes.new('ShaderNodeOutputMaterial')
+    m.node_tree.links.new(em.outputs['Emission'], out.inputs['Surface'])
+    return m
+
+
+def box(name, sx, sy, sz, loc, mat):
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1)
+    for v in bm.verts:
+        v.co.x *= sx
+        v.co.y *= sy
+        v.co.z *= sz
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = new_obj(name, mesh)
+    obj.location = loc
+    obj.data.materials.append(mat)
+    return obj
+
+
+dark_wall_mat = solid_mat('backwall', (0.030, 0.020, 0.014, 1), rough=0.85)
+shelf_mat = solid_mat('shelfmat', (0.09, 0.055, 0.032, 1), rough=0.45)
+glow_mat = emission_mat('shelfglow', (1.0, 0.62, 0.30, 1), 2.2)
+lamp_mat = emission_mat('lampglow', (1.0, 0.62, 0.30, 1), 9.0)
+
+box('backwall', 30, 0.3, 10, (0, BAR_Y + 0.6, 4.0), dark_wall_mat)
+
+BOTTLE_TINTS = [
+    (0.75, 0.45, 0.15, 1),   # амбер (виски)
+    (0.25, 0.45, 0.22, 1),   # зелёное стекло (джин)
+    (0.85, 0.9, 0.95, 1),    # прозрачное (водка)
+    (0.45, 0.12, 0.10, 1),   # тёмно-красное (вермут)
+    (0.55, 0.30, 0.12, 1),   # коньяк
+    (0.20, 0.25, 0.45, 1),   # синее стекло
+]
+
+
+def backbar_bottle(idx, x, z_base):
+    r = 0.22 + random.random() * 0.14
+    h = 1.5 + random.random() * 1.0
+    neck = 0.30 + random.random() * 0.1
+    pts = [
+        (0.001, 0.0), (r, 0.0), (r * 1.03, 0.08), (r, h * 0.55),
+        (r * 0.5, h * 0.72), (r * neck, h * 0.9), (r * neck * 0.92, h),
+        (0.001, h),
+    ]
+    b = lathe('bb_bottle_%d' % idx, pts, steps=32)
+    tint = BOTTLE_TINTS[idx % len(BOTTLE_TINTS)]
+    b.data.materials.append(glass_mat('bb_glass_%d' % idx, tint, rough=0.15))
+    b.location = (x, BAR_Y, z_base)
+    return b
+
+
+SHELF_LEVELS = [1.3, 2.9, 4.5]
+for si, z in enumerate(SHELF_LEVELS):
+    box('shelf_%d' % si, 20, 1.0, 0.1, (0, BAR_Y, z - 0.05), shelf_mat)
+    # тёплая световая полоса на стене за бутылками
+    box('glow_%d' % si, 19, 0.05, 0.30, (0, BAR_Y + 0.45, z + 0.35), glow_mat)
+    n = 11
+    for i in range(n):
+        x = -8.0 + i * 1.6 + (random.random() - 0.5) * 0.5
+        backbar_bottle(si * n + i, x, z)
+
+# подвесные лампы над стойкой — тёплые круги боке в верхней части кадра
+cord_mat = solid_mat('cordmat', (0.05, 0.04, 0.035, 1), rough=0.6)
+for i, lx in enumerate((-5.5, 0.0, 5.5)):
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=8, radius=0.18)
+    mesh = bpy.data.meshes.new('lamp_%d' % i)
+    bm.to_mesh(mesh)
+    bm.free()
+    lamp = new_obj('lamp_%d' % i, mesh)
+    lamp.location = (lx, 3.5, 3.95)
+    lamp.data.materials.append(lamp_mat)
+    cord = cylinder('cord_%d' % i, 0.018, 0.018, 4.0, segments=12)
+    cord.location = (lx, 3.5, 4.05)
+    cord.data.materials.append(cord_mat)
 
 # ---------------- стакан ----------------
 g = GLASS
@@ -280,16 +384,29 @@ bottle_profile = [
     (0.1, 2.97), (0.1, 2.9),
 ]
 bottle_glass = lathe('bottle_glass', bottle_profile)
+sol = bottle_glass.modifiers.new('sol', 'SOLIDIFY')
+sol.thickness = 0.012
 bottle_glass.data.materials.append(glass_mat('bottleglass', (0.92, 0.96, 1.0, 1), rough=0.05))
 bottle_glass.parent = bottle
 # водка внутри бутылки
 bottle_liq = lathe('bottle_liq', [
     (0.001, 0.06), (0.32, 0.06), (0.405, 0.13), (0.405, 1.7), (0.36, 1.95), (0.001, 1.95)])
 bottle_liq.data.materials.append(
-    liquid_mat('bottle_vodka', (0.95, 0.97, 1.0, 1), (0.85, 0.93, 1.0, 1), density=0.6, ior=1.33))
+    liquid_mat('bottle_vodka', (0.95, 0.97, 1.0, 1), (0.92, 0.96, 1.0, 1), density=0.35, ior=1.33))
 bottle_liq.parent = bottle
 # этикетка
-label = cylinder('label', 0.428, 0.428, 0.8, segments=64)
+bm = bmesh.new()
+lv = [bm.verts.new((0.424, 0, 0)), bm.verts.new((0.424, 0, 0.8))]
+bm.edges.new(lv)
+bmesh.ops.spin(bm, geom=bm.verts[:] + bm.edges[:], axis=(0, 0, 1), cent=(0, 0, 0),
+               angle=math.pi * 1.44, steps=48, use_merge=False)
+mesh = bpy.data.meshes.new('label')
+bm.to_mesh(mesh)
+bm.free()
+for poly in mesh.polygons:
+    poly.use_smooth = True
+label = new_obj('label', mesh)
+label.rotation_euler.z = math.pi * (1.5 - 0.72)  # центр арки на камеру (-Y)
 label.location.z = 0.62
 label.data.materials.append(solid_mat('labelmat', (0.93, 0.95, 0.97, 1), rough=0.6))
 label.parent = bottle
@@ -317,11 +434,13 @@ bpy.context.collection.objects.link(carafe)
 carafe_glass = lathe('carafe_glass', [
     (0.001, 0.02), (0.42, 0.02), (0.55, 0.18), (0.58, 0.7), (0.5, 1.15),
     (0.32, 1.5), (0.23, 1.75), (0.22, 2.05), (0.3, 2.24), (0.26, 2.25), (0.19, 2.08)])
+sol = carafe_glass.modifiers.new('sol', 'SOLIDIFY')
+sol.thickness = 0.012
 carafe_glass.data.materials.append(glass_mat('carafeglass'))
 carafe_glass.parent = carafe
 carafe_juice = lathe('carafe_juice', [
-    (0.001, 0.06), (0.41, 0.06), (0.535, 0.2), (0.565, 0.7), (0.485, 1.12),
-    (0.31, 1.45), (0.001, 1.45)])
+    (0.001, 0.06), (0.40, 0.06), (0.525, 0.2), (0.555, 0.7), (0.475, 1.12),
+    (0.30, 1.45), (0.001, 1.45)])
 carafe_juice.data.materials.append(
     liquid_mat('carafe_oj', (1.0, 0.45, 0.02, 1), (1.0, 0.5, 0.03, 1), density=3.0, ior=1.35, rough=0.35, transmission=0.25))
 carafe_juice.parent = carafe
@@ -357,7 +476,7 @@ con.track_axis = 'TRACK_NEGATIVE_Z'
 con.up_axis = 'UP_Y'
 cam_data.dof.use_dof = True
 cam_data.dof.focus_object = target
-cam_data.dof.aperture_fstop = 2.0
+cam_data.dof.aperture_fstop = 1.2
 
 
 # ---------------- состояние из прогресса (копия JS) ----------------
@@ -488,7 +607,19 @@ def apply_state(p):
 scene.render.image_settings.file_format = 'WEBP'
 scene.render.image_settings.quality = 85
 
-if args.still is not None:
+if args.backdrop:
+    # Пустая сцена бара: задник для realtime-режима (three.js)
+    apply_state(0.5)
+    for name in ['glass', 'vodka_layer', 'juice_layer', 'bottle_glass', 'bottle_liq',
+                 'label', 'vodkatext', 'carafe_glass', 'carafe_juice',
+                 'stream_vodka', 'stream_juice']:
+        o = bpy.data.objects.get(name)
+        if o:
+            o.hide_render = True
+    scene.render.filepath = 'public/textures/backdrop'
+    bpy.ops.render.render(write_still=True)
+    print('BACKDROP DONE')
+elif args.still is not None:
     apply_state(args.still)
     scene.render.filepath = args.out.rstrip('/') + '/preview_%03d' % round(args.still * 100)
     bpy.ops.render.render(write_still=True)

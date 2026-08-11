@@ -49,15 +49,12 @@ export function createScene(container) {
 
   const scene = new THREE.Scene();
 
-  // HDRI бара: окружение (отражения в стекле) + размытый фон вместо стены
+  // HDRI — только отражения в стекле. Видимый фон — Cycles-рендер того же
+  // бара (blender --backdrop): полки с бутылками, DOF уже запечён.
   new RGBELoader().load('hdri/bar.hdr', (tex) => {
     tex.mapping = THREE.EquirectangularReflectionMapping;
     scene.environment = tex;
-    scene.background = tex;
-    scene.backgroundBlurriness = 0.12;
-    scene.backgroundIntensity = 0.35;
     scene.environmentIntensity = 0.5;
-    scene.backgroundRotation = new THREE.Euler(0, Math.PI * 1.0, 0);
     scene.environmentRotation = new THREE.Euler(0, Math.PI * 1.0, 0);
   });
 
@@ -98,8 +95,9 @@ export function createScene(container) {
     t.repeat.set(3, 1.5);
     t.anisotropy = 8;
   });
+  // Барная стойка: неглубокая, задний край виден на фоне бара
   const table = new THREE.Mesh(
-    new THREE.BoxGeometry(26, 0.5, 12),
+    new THREE.BoxGeometry(26, 0.5, 7),
     new THREE.MeshStandardMaterial({
       map: woodColor,
       normalMap: woodNormal,
@@ -110,6 +108,12 @@ export function createScene(container) {
   table.position.y = -0.25;
   table.receiveShadow = true;
   scene.add(table);
+
+  // Задник: Cycles-кадр бара той же камерой (blender --backdrop) —
+  // стол в текстуре бесшовно продолжает realtime-стол, боке запечён
+  const backdropTex = texLoader.load('textures/backdrop.webp');
+  backdropTex.colorSpace = THREE.SRGBColorSpace;
+  scene.background = backdropTex;
 
   const shadowTex = makeContactShadowTexture();
   function makeContactShadow(scale = 1) {

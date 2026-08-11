@@ -177,7 +177,7 @@ function buildSpiritBottle(v) {
     new THREE.Vector2(0.1, 2.97),
     new THREE.Vector2(0.1, 2.9),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.2 }));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.06 }));
   body.renderOrder = 10;
   group.add(body);
   addLabel(group, 0.425, 1.0, 0.85, v);
@@ -204,7 +204,7 @@ function buildSodaBottle(v) {
     new THREE.Vector2(0.09, 2.77),
     new THREE.Vector2(0.09, 2.7),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.2 }));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.06 }));
   body.renderOrder = 10;
   group.add(body);
   addLabel(group, 0.395, 1.28, 0.62, v);
@@ -229,7 +229,7 @@ function buildCarafe(v) {
     new THREE.Vector2(0.26, 2.25),
     new THREE.Vector2(0.19, 2.08),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(0xf4f6f2, { thickness: 0.15 }));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(0xf4f6f2, { thickness: 0.06 }));
   body.renderOrder = 10;
   group.add(body);
 
