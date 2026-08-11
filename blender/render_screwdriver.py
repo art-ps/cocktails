@@ -20,6 +20,8 @@ ap.add_argument('--height', type=int, default=720)
 ap.add_argument('--samples', type=int, default=48)
 ap.add_argument('--out', type=str, default='public/frames/screwdriver/')
 ap.add_argument('--still', type=float, default=None, help='отрендерить один кадр при прогрессе p (0..1)')
+ap.add_argument('--f0', type=int, default=1, help='первый кадр диапазона (рендер чанками)')
+ap.add_argument('--f1', type=int, default=None, help='последний кадр диапазона')
 args = ap.parse_args(argv)
 
 # ---------------- тайминг (копия src/main.js) ----------------
@@ -54,6 +56,9 @@ scene = bpy.context.scene
 scene.render.engine = 'CYCLES'
 scene.cycles.samples = args.samples
 scene.cycles.use_denoising = True
+scene.render.use_persistent_data = True  # не пересобирать сцену на каждый кадр
+# новые ключи сразу линейные — поза кадра совпадает с расчётом apply_state
+bpy.context.preferences.edit.keyframe_new_interpolation_type = 'LINEAR'
 scene.render.resolution_x = args.width
 scene.render.resolution_y = args.height
 scene.render.film_transparent = False
@@ -129,12 +134,14 @@ def glass_mat(name, color=(1, 1, 1, 1), rough=0.02, ior=1.5):
     return m
 
 
-def liquid_mat(name, color, absorb, density=1.4, ior=1.34, rough=0.05):
+def liquid_mat(name, color, absorb, density=1.4, ior=1.34, rough=0.05, transmission=1.0):
+    # absorb — цвет, который жидкость ПРОПУСКАЕТ (Volume Absorption).
+    # Мутные жидкости (сок) делаем через низкий transmission: мякоть рассеивает свет.
     m, bsdf, tree = mat_nodes(name)
     bsdf.inputs['Base Color'].default_value = color
     bsdf.inputs['Roughness'].default_value = rough
     bsdf.inputs['IOR'].default_value = ior
-    bsdf.inputs['Transmission Weight'].default_value = 1.0
+    bsdf.inputs['Transmission Weight'].default_value = transmission
     vol = tree.nodes.new('ShaderNodeVolumeAbsorption')
     vol.inputs['Color'].default_value = absorb
     vol.inputs['Density'].default_value = density
@@ -152,28 +159,62 @@ def solid_mat(name, color, rough=0.5, metal=0.0):
 
 
 def wood_mat():
+    # PBR-орех из public/textures (те же карты, что в realtime-режиме).
+    # Меши без UV — box-проекция по объектным координатам.
     m, bsdf, tree = mat_nodes('wood')
     n = tree.nodes
-    tex = n.new('ShaderNodeTexWave')
-    tex.inputs['Scale'].default_value = 1.2
-    tex.inputs['Distortion'].default_value = 14.0
-    tex.inputs['Detail'].default_value = 3.0
-    ramp = n.new('ShaderNodeValToRGB')
-    ramp.color_ramp.elements[0].color = (0.13, 0.065, 0.028, 1)
-    ramp.color_ramp.elements[1].color = (0.32, 0.17, 0.075, 1)
-    tree.links.new(tex.outputs['Color'], ramp.inputs['Fac'])
-    tree.links.new(ramp.outputs['Color'], bsdf.inputs['Base Color'])
-    bsdf.inputs['Roughness'].default_value = 0.32
+    tex_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'public', 'textures')
+
+    def img_node(fname, non_color=False):
+        node = n.new('ShaderNodeTexImage')
+        node.image = bpy.data.images.load(os.path.join(tex_dir, fname))
+        if non_color:
+            node.image.colorspace_settings.name = 'Non-Color'
+        node.projection = 'BOX'
+        node.projection_blend = 0.2
+        return node
+
+    coord = n.new('ShaderNodeTexCoord')
+    mapping = n.new('ShaderNodeMapping')
+    mapping.inputs['Scale'].default_value = (0.25, 0.25, 0.25)
+    tree.links.new(coord.outputs['Object'], mapping.inputs['Vector'])
+
+    color = img_node('wood_color.jpg')
+    rough = img_node('wood_rough.jpg', non_color=True)
+    nrm_tex = img_node('wood_normal.jpg', non_color=True)
+    for node in (color, rough, nrm_tex):
+        tree.links.new(mapping.outputs['Vector'], node.inputs['Vector'])
+
+    nrm = n.new('ShaderNodeNormalMap')
+    tree.links.new(nrm_tex.outputs['Color'], nrm.inputs['Color'])
+    tree.links.new(color.outputs['Color'], bsdf.inputs['Base Color'])
+    tree.links.new(rough.outputs['Color'], bsdf.inputs['Roughness'])
+    tree.links.new(nrm.outputs['Normal'], bsdf.inputs['Normal'])
     return m
 
 
 # ---------------- мир и свет ----------------
+# Тот же HDRI, что в realtime-режиме (public/hdri/bar.hdr) — стили совпадают
+import os
+HDRI = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'public', 'hdri', 'bar.hdr')
+
 world = bpy.data.worlds.new('world')
 scene.world = world
 world.use_nodes = True
-bg = world.node_tree.nodes['Background']
-bg.inputs['Color'].default_value = (0.028, 0.018, 0.012, 1)
-bg.inputs['Strength'].default_value = 1.0
+wt = world.node_tree
+bg = wt.nodes['Background']
+bg.inputs['Strength'].default_value = 0.6
+if os.path.exists(HDRI):
+    env = wt.nodes.new('ShaderNodeTexEnvironment')
+    env.image = bpy.data.images.load(HDRI)
+    mapping = wt.nodes.new('ShaderNodeMapping')
+    mapping.inputs['Rotation'].default_value = (0, 0, math.pi * 1.15)
+    coord = wt.nodes.new('ShaderNodeTexCoord')
+    wt.links.new(coord.outputs['Generated'], mapping.inputs['Vector'])
+    wt.links.new(mapping.outputs['Vector'], env.inputs['Vector'])
+    wt.links.new(env.outputs['Color'], bg.inputs['Color'])
+else:
+    bg.inputs['Color'].default_value = (0.028, 0.018, 0.012, 1)
 
 
 def area_light(name, loc, rot, size, power, color=(1, 1, 1)):
@@ -228,10 +269,10 @@ glass_obj.data.materials.append(glass_mat('glassmat'))
 # слои жидкости (водка снизу, сок сверху) — базы в z=0, скейлим по Z
 vodka_layer = cylinder('vodka_layer', g['innerR'] - 0.012, g['innerR'] * 0.78, 1.0)
 vodka_layer.data.materials.append(
-    liquid_mat('vodka_liq', (0.95, 0.97, 1.0, 1), (0.9, 0.95, 1.0, 1), density=0.4, ior=1.33))
+    liquid_mat('vodka_liq', (0.9, 0.94, 0.98, 1), (0.85, 0.93, 1.0, 1), density=0.8, ior=1.33, rough=0.1, transmission=0.75))
 juice_layer = cylinder('juice_layer', g['innerR'] - 0.012, g['innerR'] - 0.012, 1.0)
 juice_layer.data.materials.append(
-    liquid_mat('juice_liq', (1.0, 0.5, 0.03, 1), (0.15, 0.45, 0.9, 1), density=5.0, ior=1.35, rough=0.15))
+    liquid_mat('juice_liq', (1.0, 0.45, 0.02, 1), (1.0, 0.5, 0.03, 1), density=3.0, ior=1.35, rough=0.35, transmission=0.25))
 
 # ---------------- бутылка водки ----------------
 BOTTLE_H = 2.96
@@ -249,7 +290,7 @@ bottle_glass.parent = bottle
 bottle_liq = lathe('bottle_liq', [
     (0.001, 0.06), (0.30, 0.06), (0.385, 0.13), (0.385, 1.7), (0.34, 1.95), (0.001, 1.95)])
 bottle_liq.data.materials.append(
-    liquid_mat('bottle_vodka', (0.95, 0.97, 1.0, 1), (0.9, 0.95, 1.0, 1), density=0.3, ior=1.33))
+    liquid_mat('bottle_vodka', (0.95, 0.97, 1.0, 1), (0.85, 0.93, 1.0, 1), density=0.6, ior=1.33))
 bottle_liq.parent = bottle
 # этикетка
 label = cylinder('label', 0.428, 0.428, 0.8, segments=64)
@@ -286,7 +327,7 @@ carafe_juice = lathe('carafe_juice', [
     (0.001, 0.06), (0.40, 0.06), (0.52, 0.2), (0.545, 0.7), (0.47, 1.12),
     (0.30, 1.45), (0.001, 1.45)])
 carafe_juice.data.materials.append(
-    liquid_mat('carafe_oj', (1.0, 0.5, 0.03, 1), (0.15, 0.45, 0.9, 1), density=6.0, ior=1.35, rough=0.15))
+    liquid_mat('carafe_oj', (1.0, 0.45, 0.02, 1), (1.0, 0.5, 0.03, 1), density=3.0, ior=1.35, rough=0.35, transmission=0.25))
 carafe_juice.parent = carafe
 
 VESSELS = [
@@ -297,15 +338,17 @@ VESSELS = [
 # ---------------- струя ----------------
 stream_vodka = cylinder('stream_vodka', 0.038, 0.028, 1.0)
 stream_vodka.data.materials.append(
-    liquid_mat('stream_v', (0.95, 0.97, 1.0, 1), (0.9, 0.95, 1.0, 1), density=0.3, ior=1.33))
+    liquid_mat('stream_v', (0.95, 0.97, 1.0, 1), (0.85, 0.93, 1.0, 1), density=0.6, ior=1.33))
 stream_juice = cylinder('stream_juice', 0.075, 0.055, 1.0)
 stream_juice.data.materials.append(
-    liquid_mat('stream_j', (1.0, 0.5, 0.03, 1), (0.15, 0.45, 0.9, 1), density=6.0, rough=0.2))
+    liquid_mat('stream_j', (1.0, 0.45, 0.02, 1), (1.0, 0.5, 0.03, 1), density=3.0, rough=0.3, transmission=0.25))
 STREAMS = [stream_vodka, stream_juice]
 
 # ---------------- камера ----------------
 cam_data = bpy.data.cameras.new('cam')
-cam_data.lens = 62
+cam_data.lens = 35  # ≈ вертикальный FOV 38°, как PerspectiveCamera в three.js
+cam_data.sensor_fit = 'VERTICAL'
+cam_data.sensor_height = 24
 cam = bpy.data.objects.new('cam', cam_data)
 bpy.context.collection.objects.link(cam)
 scene.camera = cam
@@ -473,14 +516,8 @@ else:
             st.keyframe_insert('hide_viewport', frame=f)
         cam.keyframe_insert('location', frame=f)
         target.keyframe_insert('location', frame=f)
-    # линейная интерполяция, чтобы совпадало с расчётом
-    for obj in [v['obj'] for v in VESSELS] + [vodka_layer, juice_layer, cam, target] + STREAMS:
-        if obj.animation_data and obj.animation_data.action:
-            for fc in obj.animation_data.action.fcurves:
-                for kp in fc.keyframe_points:
-                    kp.interpolation = 'LINEAR'
-    scene.frame_start = 1
-    scene.frame_end = F
+    scene.frame_start = args.f0
+    scene.frame_end = args.f1 or F
     scene.render.filepath = args.out.rstrip('/') + '/'
     bpy.ops.render.render(animation=True)
     print('ANIMATION DONE:', F, 'frames ->', scene.render.filepath)
