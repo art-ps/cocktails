@@ -190,6 +190,7 @@ function addBottleLiquid(group, pts, color) {
     depthWrite: false,
   });
   const liq = new THREE.Mesh(new THREE.LatheGeometry(pts, 48), mat);
+  liq.userData.bottleLiquid = true;
   liq.renderOrder = 8;
   group.add(liq);
 }

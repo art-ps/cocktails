@@ -31,26 +31,30 @@ export function applyToonStyle(root) {
   });
   meshes.forEach((mesh) => {
     const src = mesh.material;
+    const srcLum = src.color ? src.color.r * 0.3 + src.color.g * 0.6 + src.color.b * 0.1 : 1;
+    // «стекло» в рисованном стиле: transmission-стакан/графин или фейк-прозрачная бутылка
+    const glassLike =
+      (src.transmission > 0 && srcLum > 0.7) ||
+      (src.transparent && (src.opacity ?? 1) < 0.5 &&
+        !mesh.userData.animOpacity && !mesh.userData.bottleLiquid);
+
     let mat;
-    if (src.transmission > 0) {
-      const c = src.color;
-      const lum = c.r * 0.3 + c.g * 0.6 + c.b * 0.1;
-      if (lum > 0.7) {
-        // светлое стекло (стакан): мультяшное — белёсое, полупрозрачное
-        mat = new THREE.MeshToonMaterial({
-          color: 0xd6e9f8,
-          gradientMap: toonGradient(),
-          transparent: true,
-          opacity: 0.22,
-          depthWrite: false,
-        });
-      } else {
-        // тонированные бутылки: плоский непрозрачный цвет, как на рисованном фоне
-        mat = new THREE.MeshToonMaterial({
-          color: c.clone(),
-          gradientMap: toonGradient(),
-        });
-      }
+    if (glassLike) {
+      // голубая заливка + полупрозрачный hull-контур ниже: на светлом фоне
+      // белёсое стекло было невидимым
+      mat = new THREE.MeshToonMaterial({
+        color: 0xaacce4,
+        gradientMap: toonGradient(),
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false,
+      });
+    } else if (src.transmission > 0) {
+      // тонированные бутылки: плоский непрозрачный цвет, как на рисованном фоне
+      mat = new THREE.MeshToonMaterial({
+        color: src.color.clone(),
+        gradientMap: toonGradient(),
+      });
     } else {
       mat = new THREE.MeshToonMaterial({
         color: src.color ? src.color.clone() : new THREE.Color(0xffffff),
@@ -59,12 +63,30 @@ export function applyToonStyle(root) {
       if (src.map) mat.map = src.map;
       if (src.transparent) {
         mat.transparent = true;
-        mat.opacity = src.opacity ?? 1;
+        mat.opacity = mesh.userData.bottleLiquid ? 0.6 : (src.opacity ?? 1);
         mat.depthWrite = src.depthWrite;
       }
     }
+    // лёгкая самоподсветка собственным цветом: тёплый свет не глушит
+    // холодные заливки, цвета остаются плоскими и сочными, как в аниме.
+    // Материалам с текстурой (этикетки) нельзя — засвечивает рисунок.
+    if (!mat.map) mat.emissive.copy(mat.color).multiplyScalar(0.3);
     mesh.material = mat;
     src.dispose?.();
+
+    if (glassLike) {
+      const hull = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial({
+        color: OUTLINE_COLOR,
+        side: THREE.BackSide,
+        transparent: true,
+        opacity: 0.26,
+        depthWrite: false,
+      }));
+      hull.userData.outline = true;
+      hull.scale.setScalar(1.02);
+      hull.renderOrder = (mesh.renderOrder || 0) - 1;
+      mesh.add(hull);
+    }
 
     // Контур только у непрозрачных: BackSide-оболочка видна СКВОЗЬ
     // прозрачное стекло и превращает его в глухой тёмный силуэт
