@@ -4,6 +4,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { makeToonBackdrop, toonGradient } from './toon.js';
 
 function makeContactShadowTexture() {
   const c = document.createElement('canvas');
@@ -173,5 +174,27 @@ export function createScene(container) {
   }
   window.addEventListener('resize', resize);
 
-  return { renderer, scene, camera, makeContactShadow, makeCaustic, composer };
+  // Переключение окружения: реализм (Cycles-задник, PBR-стол, bloom)
+  // или мультяшный стиль (рисованный задник, плоский стол, без bloom)
+  const woodMaterial = table.material;
+  let toonBackdrop = null;
+  let toonTableMat = null;
+  function applyStyle(style) {
+    if (style === 'toon') {
+      toonBackdrop = toonBackdrop || makeToonBackdrop();
+      toonTableMat = toonTableMat || new THREE.MeshToonMaterial({
+        color: 0x9a6238,
+        gradientMap: toonGradient(),
+      });
+      scene.background = toonBackdrop;
+      table.material = toonTableMat;
+      bloom.enabled = false;
+    } else {
+      scene.background = backdropTex;
+      table.material = woodMaterial;
+      bloom.enabled = true;
+    }
+  }
+
+  return { renderer, scene, camera, makeContactShadow, makeCaustic, composer, applyStyle };
 }

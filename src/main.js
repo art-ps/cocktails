@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { COCKTAILS } from './cocktails.js';
 import { createScene } from './scene.js';
 import { buildGlass, buildVessel, buildStream, glassInfo, makeLiquidLayer, makeSurfaceDisc } from './vessels.js';
+import { applyToonStyle } from './toon.js';
 import { FrameSequence, drawCover } from './frames.js';
 
 // ---------------------------------------------------------------------------
@@ -34,10 +35,15 @@ const lerp = (a, b, k) => a + (b - a) * k;
 // ---------------------------------------------------------------------------
 
 const app = document.getElementById('app');
-const { scene, camera, makeContactShadow, makeCaustic, composer } = createScene(app);
+const { scene, camera, makeContactShadow, makeCaustic, composer, applyStyle } = createScene(app);
+
+// Стиль отображения: 'real' (фотореализм) | 'toon' (мультяшный)
+let visualStyle = localStorage.getItem('barStyle') || 'real';
+applyStyle(visualStyle);
 
 const ui = {
   menu: document.getElementById('menu'),
+  styleBtn: document.getElementById('styleBtn'),
   cards: document.getElementById('cards'),
   hud: document.getElementById('hud'),
   backBtn: document.getElementById('backBtn'),
@@ -150,6 +156,10 @@ function startCocktail(cocktail) {
     return v;
   });
 
+  if (visualStyle === 'toon') {
+    [glass, stream, ...vessels].forEach(applyToonStyle);
+  }
+
   active = {
     cocktail,
     glass,
@@ -247,6 +257,19 @@ COCKTAILS.forEach((c) => {
 
 ui.backBtn.addEventListener('click', backToMenu);
 ui.againBtn.addEventListener('click', backToMenu);
+
+// ---------- Переключатель стиля ----------
+
+function styleLabel() {
+  return visualStyle === 'toon' ? '✏️ Стиль: мультяшный' : '🎬 Стиль: реализм';
+}
+ui.styleBtn.textContent = styleLabel();
+ui.styleBtn.addEventListener('click', () => {
+  visualStyle = visualStyle === 'toon' ? 'real' : 'toon';
+  localStorage.setItem('barStyle', visualStyle);
+  applyStyle(visualStyle);
+  ui.styleBtn.textContent = styleLabel();
+});
 
 // ---------- Ввод ----------
 

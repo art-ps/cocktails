@@ -101,6 +101,7 @@ export function makeLiquidLayer(type, isBottom) {
     envMapIntensity: 0.35,
   });
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.noOutline = true; // toon-контур пересёк бы стенку стакана
   mesh.scale.y = 0.0001;
   mesh.visible = false;
   return mesh;
@@ -120,6 +121,7 @@ export function makeSurfaceDisc(type) {
     envMapIntensity: 1.1,
   });
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.noOutline = true;
   mesh.visible = false;
   return mesh;
 }
@@ -196,6 +198,7 @@ function addCap(group, radius, yBottom, height, color) {
   const geo = new THREE.CylinderGeometry(radius, radius, height, 32);
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.35, transparent: true });
   const cap = new THREE.Mesh(geo, mat);
+  cap.userData.animOpacity = true; // toon-контур ломает анимацию исчезания
   cap.position.y = yBottom + height / 2;
   group.add(cap);
   group.userData.cap = cap; // крышка «снимается», когда бутылку поднимают

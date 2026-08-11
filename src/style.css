@@ -34,6 +34,19 @@ body {
   background: radial-gradient(90% 70% at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%);
 }
 
+#styleBtn {
+  margin-top: 18px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0e8d8;
+  font: 500 14px Inter, sans-serif;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+#styleBtn:hover { background: rgba(255, 255, 255, 0.16); }
+
 #app { position: fixed; inset: 0; z-index: 1; }
 #app::after {
   content: '';
