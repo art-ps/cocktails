@@ -12,6 +12,23 @@ const GLASS_PARAMS = {
 // не показывает transparent-объекты сквозь себя, поэтому вся жидкость
 // в сцене непрозрачная (см. makeLiquidLayer) и видна через стекло с преломлением.
 function glassMaterial(tint = 0xffffff, opts = {}) {
+  // fake: alpha-прозрачность вместо transmission. Нужна светлым бутылкам,
+  // где сквозь стекло должна быть видна transparent-жидкость (см. addBottleLiquid).
+  if (opts.fake) {
+    return new THREE.MeshPhysicalMaterial({
+      color: tint,
+      metalness: 0,
+      roughness: 0.05,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
+      specularIntensity: 1,
+      envMapIntensity: 0.5,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+    });
+  }
   return new THREE.MeshPhysicalMaterial({
     color: tint,
     metalness: 0,
@@ -25,6 +42,13 @@ function glassMaterial(tint = 0xffffff, opts = {}) {
     envMapIntensity: 0.5,
     side: THREE.DoubleSide,
   });
+}
+
+// Светлое прозрачное стекло? Тогда фейк-прозрачность + видимая жидкость.
+// Тёмное тонированное transmission-стекло само выглядит «полным».
+function isClearTint(tint) {
+  const c = new THREE.Color(tint);
+  return c.r * 0.3 + c.g * 0.6 + c.b * 0.1 > 0.55;
 }
 
 // ---------- Стакан ----------
@@ -149,19 +173,22 @@ function addLabel(group, radius, yCenter, height, v) {
   group.add(label);
 }
 
-// Столб жидкости внутри бутылки. Непрозрачный: transmission-стекло
-// не показывает transparent-объекты, прозрачные спирты имитируем светлым цветом.
+// Полупрозрачный столб жидкости — только для светлых бутылок с фейк-стеклом
+// (сквозь alpha-стекло transparent-жидкость видна, сквозь transmission — нет).
 function addBottleLiquid(group, pts, color) {
   const mat = new THREE.MeshPhysicalMaterial({
     color,
     metalness: 0,
-    roughness: 0.22,
-    clearcoat: 0.3,
-    clearcoatRoughness: 0.2,
-    envMapIntensity: 0.3,
+    roughness: 0.08,
+    clearcoat: 0.6,
+    clearcoatRoughness: 0.1,
+    envMapIntensity: 0.45,
+    transparent: true,
+    opacity: 0.38,
+    depthWrite: false,
   });
   const liq = new THREE.Mesh(new THREE.LatheGeometry(pts, 48), mat);
-  liq.renderOrder = 2;
+  liq.renderOrder = 8;
   group.add(liq);
 }
 
@@ -193,17 +220,23 @@ function buildSpiritBottle(v) {
     new THREE.Vector2(0.1, 2.97),
     new THREE.Vector2(0.1, 2.9),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.06 }));
+  const clear = isClearTint(v.tint);
+  const body = new THREE.Mesh(
+    new THREE.LatheGeometry(pts, 56),
+    glassMaterial(v.tint, { thickness: 0.06, fake: clear })
+  );
   body.renderOrder = 10;
   group.add(body);
-  addBottleLiquid(group, [
-    new THREE.Vector2(0, 0.06),
-    new THREE.Vector2(0.31, 0.06),
-    new THREE.Vector2(0.39, 0.14),
-    new THREE.Vector2(0.39, 1.6),
-    new THREE.Vector2(0.34, 1.85),
-    new THREE.Vector2(0, 1.85),
-  ], v.liquid ?? 0xf2f5f8);
+  if (clear) {
+    addBottleLiquid(group, [
+      new THREE.Vector2(0, 0.06),
+      new THREE.Vector2(0.31, 0.06),
+      new THREE.Vector2(0.39, 0.14),
+      new THREE.Vector2(0.39, 1.6),
+      new THREE.Vector2(0.34, 1.85),
+      new THREE.Vector2(0, 1.85),
+    ], v.liquid ?? 0xdfe8f0);
+  }
   addLabel(group, 0.425, 1.0, 0.85, v);
   addCap(group, 0.15, 2.86, 0.24, v.capColor);
   group.userData.mouthHeight = 2.96;
@@ -228,19 +261,25 @@ function buildSodaBottle(v) {
     new THREE.Vector2(0.09, 2.77),
     new THREE.Vector2(0.09, 2.7),
   ];
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.06 }));
+  const clear = isClearTint(v.tint);
+  const body = new THREE.Mesh(
+    new THREE.LatheGeometry(pts, 56),
+    glassMaterial(v.tint, { thickness: 0.06, fake: clear })
+  );
   body.renderOrder = 10;
   group.add(body);
-  addBottleLiquid(group, [
-    new THREE.Vector2(0, 0.06),
-    new THREE.Vector2(0.27, 0.06),
-    new THREE.Vector2(0.35, 0.15),
-    new THREE.Vector2(0.36, 0.7),
-    new THREE.Vector2(0.31, 1.05),
-    new THREE.Vector2(0.34, 1.45),
-    new THREE.Vector2(0.33, 1.65),
-    new THREE.Vector2(0, 1.65),
-  ], v.liquid ?? 0xf2f5f8);
+  if (clear) {
+    addBottleLiquid(group, [
+      new THREE.Vector2(0, 0.06),
+      new THREE.Vector2(0.27, 0.06),
+      new THREE.Vector2(0.35, 0.15),
+      new THREE.Vector2(0.36, 0.7),
+      new THREE.Vector2(0.31, 1.05),
+      new THREE.Vector2(0.34, 1.45),
+      new THREE.Vector2(0.33, 1.65),
+      new THREE.Vector2(0, 1.65),
+    ], v.liquid ?? 0xdfe8f0);
+  }
   addLabel(group, 0.395, 1.28, 0.62, v);
   addCap(group, 0.13, 2.68, 0.18, v.capColor);
   group.userData.mouthHeight = 2.76;
