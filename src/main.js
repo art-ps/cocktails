@@ -101,12 +101,19 @@ function startCocktail(cocktail) {
     const c = new THREE.Color(ing.color);
     const hsl = { h: 0, s: 0, l: 0 };
     c.getHSL(hsl);
-    // слой непрозрачный; прозрачные ингредиенты (водка, тоник) — светлые
-    // и глянцевые, плотные (сок, кола) — темнее и матовее
-    c.setHSL(hsl.h, Math.min(1, hsl.s * 1.25), hsl.l * (0.45 + 0.45 * (1 - ing.opacity)));
+    if (ing.opacity < 0.35) {
+      // прозрачная жидкость (водка, джин, тоник): сквозь неё виден тёмный бар,
+      // поэтому слой тёмный холодный со стеклянным бликом — не светлый («молоко»)
+      c.setHSL(hsl.h, hsl.s * 0.5, 0.14 + 0.12 * ing.opacity);
+      layer.material.roughness = 0.05;
+      layer.material.envMapIntensity = 0.8;
+    } else {
+      // плотные (сок, кола, кампари): собственный цвет, матовее
+      c.setHSL(hsl.h, Math.min(1, hsl.s * 1.25), hsl.l * (0.45 + 0.3 * (1 - ing.opacity)));
+      layer.material.roughness = 0.05 + 0.35 * ing.opacity;
+      layer.material.envMapIntensity = 0.35;
+    }
     layer.material.color.copy(c);
-    layer.material.roughness = 0.05 + 0.35 * ing.opacity;
-    layer.material.envMapIntensity = 0.3 + 0.5 * (1 - ing.opacity);
     glass.add(layer);
     return layer;
   });
