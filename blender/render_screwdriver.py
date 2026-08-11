@@ -255,100 +255,39 @@ table = new_obj('table', mesh)
 table.location = (0, 0, -0.25)
 table.data.materials.append(wood_mat())
 
-# ---------------- задний бар (backbar) ----------------
-# Как в референсах: тёмная стена, подсвеченные полки с бутылками,
-# тёплые лампы. DOF камеры уводит всё это в боке.
-import random
-random.seed(7)
+# ---------------- задний фон: фотография бара ----------------
+# Реальное фото бара на shadeless-плоскости за стойкой; DOF камеры
+# размывает его в честное боке.
+PHOTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'bar_photo.jpg')
+photo_mat = bpy.data.materials.new('barphoto')
+photo_mat.use_nodes = True
+pn = photo_mat.node_tree.nodes
+pn.clear()
+tex = pn.new('ShaderNodeTexImage')
+tex.image = bpy.data.images.load(PHOTO)
+em = pn.new('ShaderNodeEmission')
+em.inputs['Strength'].default_value = 1.0
+out = pn.new('ShaderNodeOutputMaterial')
+links = photo_mat.node_tree.links
+# UV у bmesh-грида нет — сэмплим по Generated (bounding box плоскости)
+coord = pn.new('ShaderNodeTexCoord')
+links.new(coord.outputs['Generated'], tex.inputs['Vector'])
+links.new(tex.outputs['Color'], em.inputs['Color'])
+links.new(em.outputs['Emission'], out.inputs['Surface'])
 
-BAR_Y = 6.5  # стена бара
-
-def emission_mat(name, color, strength):
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    nodes = m.node_tree.nodes
-    nodes.clear()
-    em = nodes.new('ShaderNodeEmission')
-    em.inputs['Color'].default_value = color
-    em.inputs['Strength'].default_value = strength
-    out = nodes.new('ShaderNodeOutputMaterial')
-    m.node_tree.links.new(em.outputs['Emission'], out.inputs['Surface'])
-    return m
-
-
-def box(name, sx, sy, sz, loc, mat):
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1)
-    for v in bm.verts:
-        v.co.x *= sx
-        v.co.y *= sy
-        v.co.z *= sz
-    mesh = bpy.data.meshes.new(name)
-    bm.to_mesh(mesh)
-    bm.free()
-    obj = new_obj(name, mesh)
-    obj.location = loc
-    obj.data.materials.append(mat)
-    return obj
-
-
-dark_wall_mat = solid_mat('backwall', (0.030, 0.020, 0.014, 1), rough=0.85)
-shelf_mat = solid_mat('shelfmat', (0.09, 0.055, 0.032, 1), rough=0.45)
-glow_mat = emission_mat('shelfglow', (1.0, 0.62, 0.30, 1), 2.2)
-lamp_mat = emission_mat('lampglow', (1.0, 0.62, 0.30, 1), 9.0)
-
-box('backwall', 30, 0.3, 10, (0, BAR_Y + 0.6, 4.0), dark_wall_mat)
-
-BOTTLE_TINTS = [
-    (0.75, 0.45, 0.15, 1),   # амбер (виски)
-    (0.25, 0.45, 0.22, 1),   # зелёное стекло (джин)
-    (0.85, 0.9, 0.95, 1),    # прозрачное (водка)
-    (0.45, 0.12, 0.10, 1),   # тёмно-красное (вермут)
-    (0.55, 0.30, 0.12, 1),   # коньяк
-    (0.20, 0.25, 0.45, 1),   # синее стекло
-]
-
-
-def backbar_bottle(idx, x, z_base):
-    r = 0.22 + random.random() * 0.14
-    h = 1.5 + random.random() * 1.0
-    neck = 0.30 + random.random() * 0.1
-    pts = [
-        (0.001, 0.0), (r, 0.0), (r * 1.03, 0.08), (r, h * 0.55),
-        (r * 0.5, h * 0.72), (r * neck, h * 0.9), (r * neck * 0.92, h),
-        (0.001, h),
-    ]
-    b = lathe('bb_bottle_%d' % idx, pts, steps=32)
-    tint = BOTTLE_TINTS[idx % len(BOTTLE_TINTS)]
-    b.data.materials.append(glass_mat('bb_glass_%d' % idx, tint, rough=0.15))
-    b.location = (x, BAR_Y, z_base)
-    return b
-
-
-SHELF_LEVELS = [1.3, 2.9, 4.5]
-for si, z in enumerate(SHELF_LEVELS):
-    box('shelf_%d' % si, 20, 1.0, 0.1, (0, BAR_Y, z - 0.05), shelf_mat)
-    # тёплая световая полоса на стене за бутылками
-    box('glow_%d' % si, 19, 0.05, 0.30, (0, BAR_Y + 0.45, z + 0.35), glow_mat)
-    n = 11
-    for i in range(n):
-        x = -8.0 + i * 1.6 + (random.random() - 0.5) * 0.5
-        backbar_bottle(si * n + i, x, z)
-
-# подвесные лампы над стойкой — тёплые круги боке в верхней части кадра
-cord_mat = solid_mat('cordmat', (0.05, 0.04, 0.035, 1), rough=0.6)
-for i, lx in enumerate((-5.5, 0.0, 5.5)):
-    bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=8, radius=0.18)
-    mesh = bpy.data.meshes.new('lamp_%d' % i)
-    bm.to_mesh(mesh)
-    bm.free()
-    lamp = new_obj('lamp_%d' % i, mesh)
-    lamp.location = (lx, 3.5, 3.95)
-    lamp.data.materials.append(lamp_mat)
-    cord = cylinder('cord_%d' % i, 0.018, 0.018, 4.0, segments=12)
-    cord.location = (lx, 3.5, 4.05)
-    cord.data.materials.append(cord_mat)
+# 3:2 как у фото; с запасом шире кадра — финальный облёт камеры не откроет края
+bm = bmesh.new()
+bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5, calc_uvs=True)
+for v in bm.verts:
+    v.co.x *= 34
+    v.co.y *= 22.6
+mesh = bpy.data.meshes.new('barphoto')
+bm.to_mesh(mesh)
+bm.free()
+photo_plane = new_obj('barphoto', mesh)
+photo_plane.data.materials.append(photo_mat)
+photo_plane.rotation_euler.x = math.radians(90)
+photo_plane.location = (0, 9.5, 2.6)
 
 # ---------------- стакан ----------------
 g = GLASS
