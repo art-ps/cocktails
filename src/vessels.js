@@ -149,6 +149,22 @@ function addLabel(group, radius, yCenter, height, v) {
   group.add(label);
 }
 
+// Столб жидкости внутри бутылки. Непрозрачный: transmission-стекло
+// не показывает transparent-объекты, прозрачные спирты имитируем светлым цветом.
+function addBottleLiquid(group, pts, color) {
+  const mat = new THREE.MeshPhysicalMaterial({
+    color,
+    metalness: 0,
+    roughness: 0.22,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.2,
+    envMapIntensity: 0.3,
+  });
+  const liq = new THREE.Mesh(new THREE.LatheGeometry(pts, 48), mat);
+  liq.renderOrder = 2;
+  group.add(liq);
+}
+
 function addCap(group, radius, yBottom, height, color) {
   const geo = new THREE.CylinderGeometry(radius, radius, height, 32);
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.35, transparent: true });
@@ -180,6 +196,14 @@ function buildSpiritBottle(v) {
   const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.06 }));
   body.renderOrder = 10;
   group.add(body);
+  addBottleLiquid(group, [
+    new THREE.Vector2(0, 0.06),
+    new THREE.Vector2(0.31, 0.06),
+    new THREE.Vector2(0.39, 0.14),
+    new THREE.Vector2(0.39, 1.6),
+    new THREE.Vector2(0.34, 1.85),
+    new THREE.Vector2(0, 1.85),
+  ], v.liquid ?? 0xf2f5f8);
   addLabel(group, 0.425, 1.0, 0.85, v);
   addCap(group, 0.15, 2.86, 0.24, v.capColor);
   group.userData.mouthHeight = 2.96;
@@ -207,6 +231,16 @@ function buildSodaBottle(v) {
   const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), glassMaterial(v.tint, { thickness: 0.06 }));
   body.renderOrder = 10;
   group.add(body);
+  addBottleLiquid(group, [
+    new THREE.Vector2(0, 0.06),
+    new THREE.Vector2(0.27, 0.06),
+    new THREE.Vector2(0.35, 0.15),
+    new THREE.Vector2(0.36, 0.7),
+    new THREE.Vector2(0.31, 1.05),
+    new THREE.Vector2(0.34, 1.45),
+    new THREE.Vector2(0.33, 1.65),
+    new THREE.Vector2(0, 1.65),
+  ], v.liquid ?? 0xf2f5f8);
   addLabel(group, 0.395, 1.28, 0.62, v);
   addCap(group, 0.13, 2.68, 0.18, v.capColor);
   group.userData.mouthHeight = 2.76;
