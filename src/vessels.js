@@ -4,8 +4,8 @@ import * as THREE from 'three';
 // Начало координат каждой группы — центр донышка (y=0).
 
 const GLASS_PARAMS = {
-  highball: { height: 2.35, outerR: 0.56, wall: 0.05, floor: 0.24, innerR: 0.50, maxFill: 1.72 },
-  rocks:    { height: 1.55, outerR: 0.78, wall: 0.07, floor: 0.34, innerR: 0.70, maxFill: 0.98 },
+  highball: { height: 2.35, outerR: 0.56, wall: 0.03, floor: 0.12, innerR: 0.53, maxFill: 1.72 },
+  rocks:    { height: 1.55, outerR: 0.78, wall: 0.04, floor: 0.18, innerR: 0.74, maxFill: 0.98 },
 };
 
 // Честное стекло: transmission + ior. Ограничение three.js — transmission
@@ -15,14 +15,14 @@ function glassMaterial(tint = 0xffffff, opts = {}) {
   return new THREE.MeshPhysicalMaterial({
     color: tint,
     metalness: 0,
-    roughness: 0.04,
+    roughness: 0.06,
     transmission: 1,
     thickness: opts.thickness ?? 0.12,
     ior: 1.5,
     clearcoat: 1,
     clearcoatRoughness: 0.05,
     specularIntensity: 1,
-    envMapIntensity: 1.2,
+    envMapIntensity: 0.5,
     side: THREE.DoubleSide,
   });
 }

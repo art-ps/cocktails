@@ -22,6 +22,7 @@ ap.add_argument('--out', type=str, default='public/frames/screwdriver/')
 ap.add_argument('--still', type=float, default=None, help='отрендерить один кадр при прогрессе p (0..1)')
 ap.add_argument('--f0', type=int, default=1, help='первый кадр диапазона (рендер чанками)')
 ap.add_argument('--f1', type=int, default=None, help='последний кадр диапазона')
+ap.add_argument('--envrot', type=float, default=1.0, help='поворот HDRI, доли pi')
 args = ap.parse_args(argv)
 
 # ---------------- тайминг (копия src/main.js) ----------------
@@ -35,7 +36,7 @@ INGREDIENTS = [
 ]
 TOTAL = sum(i['amount'] for i in INGREDIENTS)
 
-GLASS = dict(height=2.35, outerR=0.56, innerR=0.50, floor=0.24, maxFill=1.72)
+GLASS = dict(height=2.35, outerR=0.56, innerR=0.53, floor=0.12, maxFill=1.72)
 
 
 def clamp01(x):
@@ -125,7 +126,7 @@ def mat_nodes(name):
     return m, m.node_tree.nodes['Principled BSDF'], m.node_tree
 
 
-def glass_mat(name, color=(1, 1, 1, 1), rough=0.02, ior=1.5):
+def glass_mat(name, color=(1, 1, 1, 1), rough=0.05, ior=1.5):
     m, bsdf, _ = mat_nodes(name)
     bsdf.inputs['Base Color'].default_value = color
     bsdf.inputs['Roughness'].default_value = rough
@@ -187,8 +188,14 @@ def wood_mat():
 
     nrm = n.new('ShaderNodeNormalMap')
     tree.links.new(nrm_tex.outputs['Color'], nrm.inputs['Color'])
+    # лак стола не должен зеркалить салун — поднимаем шероховатость
+    boost = n.new('ShaderNodeMath')
+    boost.operation = 'MULTIPLY'
+    boost.inputs[1].default_value = 1.35
+    boost.use_clamp = True
+    tree.links.new(rough.outputs['Color'], boost.inputs[0])
     tree.links.new(color.outputs['Color'], bsdf.inputs['Base Color'])
-    tree.links.new(rough.outputs['Color'], bsdf.inputs['Roughness'])
+    tree.links.new(boost.outputs['Value'], bsdf.inputs['Roughness'])
     tree.links.new(nrm.outputs['Normal'], bsdf.inputs['Normal'])
     return m
 
@@ -203,12 +210,12 @@ scene.world = world
 world.use_nodes = True
 wt = world.node_tree
 bg = wt.nodes['Background']
-bg.inputs['Strength'].default_value = 0.6
+bg.inputs['Strength'].default_value = 1.0
 if os.path.exists(HDRI):
     env = wt.nodes.new('ShaderNodeTexEnvironment')
     env.image = bpy.data.images.load(HDRI)
     mapping = wt.nodes.new('ShaderNodeMapping')
-    mapping.inputs['Rotation'].default_value = (0, 0, math.pi * 1.15)
+    mapping.inputs['Rotation'].default_value = (0, 0, math.pi * args.envrot)
     coord = wt.nodes.new('ShaderNodeTexCoord')
     wt.links.new(coord.outputs['Generated'], mapping.inputs['Vector'])
     wt.links.new(mapping.outputs['Vector'], env.inputs['Vector'])
@@ -238,17 +245,6 @@ table = cylinder('table', 14, 14, 0.5)
 table.location.z = -0.5
 table.data.materials.append(wood_mat())
 
-wall = cylinder('wall', 0.1, 0.1, 0.1)  # заглушка, заменим плоскостью
-bpy.data.objects.remove(wall)
-bm = bmesh.new()
-bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=25)
-mesh = bpy.data.meshes.new('wall')
-bm.to_mesh(mesh)
-bm.free()
-wall = new_obj('wall', mesh)
-wall.rotation_euler.x = math.radians(90)
-wall.location = (0, 7.5, 8)
-wall.data.materials.append(solid_mat('wallmat', (0.055, 0.033, 0.02, 1), rough=1.0))
 
 # ---------------- стакан ----------------
 g = GLASS
@@ -284,11 +280,11 @@ bottle_profile = [
     (0.1, 2.97), (0.1, 2.9),
 ]
 bottle_glass = lathe('bottle_glass', bottle_profile)
-bottle_glass.data.materials.append(glass_mat('bottleglass', (0.92, 0.96, 1.0, 1), rough=0.03))
+bottle_glass.data.materials.append(glass_mat('bottleglass', (0.92, 0.96, 1.0, 1), rough=0.05))
 bottle_glass.parent = bottle
 # водка внутри бутылки
 bottle_liq = lathe('bottle_liq', [
-    (0.001, 0.06), (0.30, 0.06), (0.385, 0.13), (0.385, 1.7), (0.34, 1.95), (0.001, 1.95)])
+    (0.001, 0.06), (0.32, 0.06), (0.405, 0.13), (0.405, 1.7), (0.36, 1.95), (0.001, 1.95)])
 bottle_liq.data.materials.append(
     liquid_mat('bottle_vodka', (0.95, 0.97, 1.0, 1), (0.85, 0.93, 1.0, 1), density=0.6, ior=1.33))
 bottle_liq.parent = bottle
@@ -324,8 +320,8 @@ carafe_glass = lathe('carafe_glass', [
 carafe_glass.data.materials.append(glass_mat('carafeglass'))
 carafe_glass.parent = carafe
 carafe_juice = lathe('carafe_juice', [
-    (0.001, 0.06), (0.40, 0.06), (0.52, 0.2), (0.545, 0.7), (0.47, 1.12),
-    (0.30, 1.45), (0.001, 1.45)])
+    (0.001, 0.06), (0.41, 0.06), (0.535, 0.2), (0.565, 0.7), (0.485, 1.12),
+    (0.31, 1.45), (0.001, 1.45)])
 carafe_juice.data.materials.append(
     liquid_mat('carafe_oj', (1.0, 0.45, 0.02, 1), (1.0, 0.5, 0.03, 1), density=3.0, ior=1.35, rough=0.35, transmission=0.25))
 carafe_juice.parent = carafe
@@ -359,6 +355,9 @@ con = cam.constraints.new('TRACK_TO')
 con.target = target
 con.track_axis = 'TRACK_NEGATIVE_Z'
 con.up_axis = 'UP_Y'
+cam_data.dof.use_dof = True
+cam_data.dof.focus_object = target
+cam_data.dof.aperture_fstop = 2.0
 
 
 # ---------------- состояние из прогресса (копия JS) ----------------

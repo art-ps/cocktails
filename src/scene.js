@@ -54,11 +54,11 @@ export function createScene(container) {
     tex.mapping = THREE.EquirectangularReflectionMapping;
     scene.environment = tex;
     scene.background = tex;
-    scene.backgroundBlurriness = 0.35;
-    scene.backgroundIntensity = 0.16;
-    scene.environmentIntensity = 0.65;
-    scene.backgroundRotation = new THREE.Euler(0, Math.PI * 1.15, 0);
-    scene.environmentRotation = new THREE.Euler(0, Math.PI * 1.15, 0);
+    scene.backgroundBlurriness = 0.12;
+    scene.backgroundIntensity = 0.35;
+    scene.environmentIntensity = 0.5;
+    scene.backgroundRotation = new THREE.Euler(0, Math.PI * 1.0, 0);
+    scene.environmentRotation = new THREE.Euler(0, Math.PI * 1.0, 0);
   });
 
   const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -67,7 +67,7 @@ export function createScene(container) {
 
   // Тёплый ключевой свет сверху-слева, как лампа над баром
   // (HDRI берёт на себя часть освещения, поэтому интенсивности умеренные)
-  const key = new THREE.DirectionalLight(0xffdcae, 1.8);
+  const key = new THREE.DirectionalLight(0xffdcae, 1.3);
   key.position.set(-3.5, 7.5, 4.5);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
@@ -153,7 +153,7 @@ export function createScene(container) {
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.18, 0.4, 0.92
+    0.07, 0.3, 1.0
   );
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
