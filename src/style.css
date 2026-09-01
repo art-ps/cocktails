@@ -129,6 +129,16 @@ body.frames-mode #frameCanvas { display: block; }
   max-width: 1100px;
 }
 
+.menu-footer {
+  margin-top: 28px;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+.menu-footer p { margin: 0; }
+.menu-footer a { color: var(--gold); }
+
 .card {
   width: 230px;
   padding: 26px 22px 22px;
