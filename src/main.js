@@ -4,7 +4,6 @@ import { createScene } from './scene.js';
 import { buildGlass, buildVessel, buildStream, glassInfo, makeLiquidLayer, makeSurfaceDisc } from './vessels.js';
 import { applyToonStyle } from './toon.js';
 import { FrameSequence, drawCover } from './frames.js';
-import { inject } from '@vercel/analytics';
 
 // ---------------------------------------------------------------------------
 // Вся анимация — чистая функция от прогресса скролла p ∈ [0..1].
@@ -525,6 +524,3 @@ window.__bar = {
   setP(p) { targetP = p; curP = p; },
   start(i) { startCocktail(COCKTAILS[i]); },
 };
-
-// Initialize Vercel Web Analytics
-inject();
