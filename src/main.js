@@ -256,7 +256,11 @@ COCKTAILS.forEach((c) => {
     <div class="swatch" style="background:${c.swatch}"></div>
     <h3>${c.name}</h3>
     <p>${c.tagline}</p>`;
-  card.addEventListener('click', () => startCocktail(c));
+  card.addEventListener('click', () => {
+    // Карточка — div, а umami по data-атрибуту ловит только клики по a и button.
+    window.umami?.track('recipe-open', { cocktail: c.name });
+    startCocktail(c);
+  });
   ui.cards.appendChild(card);
 });
 
